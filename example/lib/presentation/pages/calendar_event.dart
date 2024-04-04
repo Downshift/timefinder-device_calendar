@@ -4,7 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:device_calendar/device_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_native_timezone/flutter_native_timezone.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/intl.dart';
 
 import '../date_time_picker.dart';
@@ -15,13 +15,11 @@ import 'event_reminders.dart';
 enum RecurrenceRuleEndType { Indefinite, MaxOccurrences, SpecifiedEndDate }
 
 class CalendarEventPage extends StatefulWidget {
-  final Calendar _calendar;
+  late final Calendar _calendar;
   final Event? _event;
   final RecurringEventDialog? _recurringEventDialog;
 
-  const CalendarEventPage(this._calendar,
-      [this._event, this._recurringEventDialog, Key? key])
-      : super(key: key);
+  CalendarEventPage(this._calendar, [this._event, this._recurringEventDialog]);
 
   @override
   _CalendarEventPageState createState() {
@@ -35,12 +33,8 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
   final Calendar _calendar;
 
   Event? _event;
-  late final DeviceCalendarPlugin _deviceCalendarPlugin;
+  late DeviceCalendarPlugin _deviceCalendarPlugin;
   final RecurringEventDialog? _recurringEventDialog;
-
-  DateTime get nowDate => DateTime.now();
-
-  // TimeOfDay get nowTime => TimeOfDay(hour: nowDate.hour, minute: nowDate.hour);
 
   TZDateTime? _startDate;
   TimeOfDay? _startTime;
@@ -49,18 +43,26 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
   TimeOfDay? _endTime;
 
   AutovalidateMode _autovalidate = AutovalidateMode.disabled;
-  DayOfWeekGroup _dayOfWeekGroup = DayOfWeekGroup.None;
+  DayOfWeekGroup? _dayOfWeekGroup = DayOfWeekGroup.None;
 
-  RecurrenceRuleEndType _recurrenceRuleEndType =
-      RecurrenceRuleEndType.Indefinite;
-  RecurrenceRule? _rrule;
-
+  bool _isRecurringEvent = false;
+  bool _isByDayOfMonth = false;
+  RecurrenceRuleEndType? _recurrenceRuleEndType;
+  int? _totalOccurrences;
+  int? _interval;
+  late DateTime _recurrenceEndDate;
+  RecurrenceFrequency? _recurrenceFrequency = RecurrenceFrequency.Daily;
+  List<DayOfWeek> _daysOfWeek = [];
+  int? _dayOfMonth;
   final List<int> _validDaysOfMonth = [];
-
+  MonthOfYear? _monthOfYear;
+  WeekNumber? _weekOfMonth;
+  DayOfWeek? _selectedDayOfWeek = DayOfWeek.Monday;
   Availability _availability = Availability.Busy;
   EventStatus? _eventStatus;
-  List<Attendee>? _attendees;
-  List<Reminder>? _reminders;
+
+  List<Attendee> _attendees = [];
+  List<Reminder> _reminders = [];
   String _timezone = 'Etc/UTC';
 
   _CalendarEventPageState(
@@ -70,91 +72,99 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
 
   void getCurentLocation() async {
     try {
-      _timezone = await FlutterNativeTimezone.getLocalTimezone();
+      _timezone = await FlutterTimezone.getLocalTimezone();
     } catch (e) {
-      debugPrint('Could not get the local timezone');
+      print('Could not get the local timezone');
     }
 
     _deviceCalendarPlugin = DeviceCalendarPlugin();
 
-    final event = _event;
-    if (event == null) {
-      debugPrint(
-          'calendar_event _timezone ------------------------- $_timezone');
-      final currentLocation = timeZoneDatabase.locations[_timezone];
+    _attendees = <Attendee>[];
+    _reminders = <Reminder>[];
+    _recurrenceRuleEndType = RecurrenceRuleEndType.Indefinite;
+
+    if (_event == null) {
+      print('calendar_event _timezone ------------------------- $_timezone');
+      var currentLocation = timeZoneDatabase.locations[_timezone];
       if (currentLocation != null) {
-        final now = TZDateTime.now(currentLocation);
-        _startDate = now;
-        _startTime = TimeOfDay(hour: now.hour, minute: now.minute);
-        final oneHourLater = now.add(const Duration(hours: 1));
-        _endDate = oneHourLater;
-        _endTime =
-            TimeOfDay(hour: oneHourLater.hour, minute: oneHourLater.minute);
+        _startDate = TZDateTime.now(currentLocation);
+        _endDate =
+            TZDateTime.now(currentLocation).add(const Duration(hours: 1));
       } else {
         var fallbackLocation = timeZoneDatabase.locations['Etc/UTC'];
-        final now = TZDateTime.now(fallbackLocation!);
-        _startDate = now;
-        _startTime = TimeOfDay(hour: now.hour, minute: now.minute);
-        final oneHourLater = now.add(const Duration(hours: 1));
-        _endDate = oneHourLater;
-        _endTime =
-            TimeOfDay(hour: oneHourLater.hour, minute: oneHourLater.minute);
+        _startDate = TZDateTime.now(fallbackLocation!);
+        _endDate =
+            TZDateTime.now(fallbackLocation).add(const Duration(hours: 1));
       }
-      _event = Event(_calendar.id,
-          start: _startDate, end: _endDate, availability: _availability);
+      _event = Event(_calendar.id, start: _startDate, end: _endDate);
 
-      debugPrint('DeviceCalendarPlugin calendar id is: ${_calendar.id}');
+      print('DeviceCalendarPlugin calendar id is: ${_calendar.id}');
 
+      _recurrenceEndDate = _endDate as DateTime;
+      _dayOfMonth = 1;
+      _monthOfYear = MonthOfYear.January;
+      _weekOfMonth = WeekNumber.First;
+      _availability = Availability.Busy;
       _eventStatus = EventStatus.None;
     } else {
-      final start = event.start;
-      final end = event.end;
-      if (start != null && end != null) {
-        _startDate = start;
-        _startTime = TimeOfDay(hour: start.hour, minute: start.minute);
-        _endDate = end;
-        _endTime = TimeOfDay(hour: end.hour, minute: end.minute);
+      _startDate = _event!.start!;
+      _endDate = _event!.end!;
+      _isRecurringEvent = _event!.recurrenceRule != null;
+
+      if (_event!.attendees!.isNotEmpty) {
+        _attendees.addAll(_event!.attendees! as Iterable<Attendee>);
       }
 
-      final attendees = event.attendees;
-      if (attendees != null && attendees.isNotEmpty) {
-        _attendees = <Attendee>[];
-        _attendees?.addAll(attendees as Iterable<Attendee>);
+      if (_event!.reminders!.isNotEmpty) {
+        _reminders.addAll(_event!.reminders!);
       }
 
-      final reminders = event.reminders;
-      if (reminders != null && reminders.isNotEmpty) {
-        _reminders = <Reminder>[];
-        _reminders?.addAll(reminders);
-      }
+      if (_isRecurringEvent) {
+        _interval = _event!.recurrenceRule!.interval!;
+        _totalOccurrences = _event!.recurrenceRule!.totalOccurrences;
+        _recurrenceFrequency = _event!.recurrenceRule!.recurrenceFrequency;
 
-      final rrule = event.recurrenceRule;
-      if (rrule != null) {
-        // debugPrint('OLD_RRULE: ${rrule.toString()}');
-        _rrule = rrule;
-        if (rrule.count != null) {
+        if (_totalOccurrences != null) {
           _recurrenceRuleEndType = RecurrenceRuleEndType.MaxOccurrences;
         }
-        if (rrule.until != null) {
+
+        if (_event!.recurrenceRule!.endDate != null) {
           _recurrenceRuleEndType = RecurrenceRuleEndType.SpecifiedEndDate;
+          _recurrenceEndDate = _event!.recurrenceRule!.endDate!;
+        }
+
+        _isByDayOfMonth = _event?.recurrenceRule?.weekOfMonth == null;
+        _daysOfWeek = _event?.recurrenceRule?.daysOfWeek ?? <DayOfWeek>[];
+        _monthOfYear =
+            _event?.recurrenceRule?.monthOfYear ?? MonthOfYear.January;
+        _weekOfMonth = _event?.recurrenceRule?.weekOfMonth ?? WeekNumber.First;
+        _selectedDayOfWeek =
+            _daysOfWeek.isNotEmpty ? _daysOfWeek.first : DayOfWeek.Monday;
+        _dayOfMonth = _event?.recurrenceRule?.dayOfMonth ?? 1;
+
+        if (_daysOfWeek.isNotEmpty) {
+          _updateDaysOfWeekGroup();
         }
       }
 
-      _availability = event.availability;
-      _eventStatus = event.status;
+      _availability = _event!.availability;
+      _eventStatus = _event!.status;
     }
 
+    _startTime = TimeOfDay(hour: _startDate!.hour, minute: _startDate!.minute);
+    _endTime = TimeOfDay(hour: _endDate!.hour, minute: _endDate!.minute);
+
     // Getting days of the current month (or a selected month for the yearly recurrence) as a default
-    _getValidDaysOfMonth(_rrule?.frequency);
+    _getValidDaysOfMonth(_recurrenceFrequency);
     setState(() {});
   }
 
   void printAttendeeDetails(Attendee attendee) {
-    debugPrint(
+    print(
         'attendee name: ${attendee.name}, email address: ${attendee.emailAddress}, type: ${attendee.role?.enumToString}');
-    debugPrint(
+    print(
         'ios specifics - status: ${attendee.iosAttendeeDetails?.attendanceStatus}, type: ${attendee.iosAttendeeDetails?.attendanceStatus?.enumToString}');
-    debugPrint(
+    print(
         'android specifics - status ${attendee.androidAttendeeDetails?.attendanceStatus}, type: ${attendee.androidAttendeeDetails?.attendanceStatus?.enumToString}');
   }
 
@@ -289,36 +299,37 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             setState(() => _event?.allDay = value),
                         title: const Text('All Day'),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(10.0),
-                        child: DateTimePicker(
-                          labelText: 'From',
-                          enableTime: _event?.allDay == false,
-                          selectedDate: _startDate,
-                          selectedTime: _startTime,
-                          selectDate: (DateTime date) {
-                            setState(() {
-                              var currentLocation =
-                                  timeZoneDatabase.locations[_timezone];
-                              if (currentLocation != null) {
-                                _startDate =
-                                    TZDateTime.from(date, currentLocation);
-                                _event?.start = _combineDateWithTime(
-                                    _startDate, _startTime);
-                              }
-                            });
-                          },
-                          selectTime: (TimeOfDay time) {
-                            setState(
-                              () {
-                                _startTime = time;
-                                _event?.start = _combineDateWithTime(
-                                    _startDate, _startTime);
-                              },
-                            );
-                          },
+                      if (_startDate != null)
+                        Padding(
+                          padding: const EdgeInsets.all(10.0),
+                          child: DateTimePicker(
+                            labelText: 'From',
+                            enableTime: _event?.allDay == false,
+                            selectedDate: _startDate,
+                            selectedTime: _startTime,
+                            selectDate: (DateTime date) {
+                              setState(() {
+                                var currentLocation =
+                                    timeZoneDatabase.locations[_timezone];
+                                if (currentLocation != null) {
+                                  _startDate =
+                                      TZDateTime.from(date, currentLocation);
+                                  _event?.start = _combineDateWithTime(
+                                      _startDate, _startTime);
+                                }
+                              });
+                            },
+                            selectTime: (TimeOfDay time) {
+                              setState(
+                                () {
+                                  _startTime = time;
+                                  _event?.start = _combineDateWithTime(
+                                      _startDate, _startTime);
+                                },
+                              );
+                            },
+                          ),
                         ),
-                      ),
                       if ((_event?.allDay == false) && Platform.isAndroid)
                         Padding(
                           padding: const EdgeInsets.all(10.0),
@@ -388,9 +399,8 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                         builder: (context) =>
                                             const EventAttendeePage()));
                                 if (result != null) {
-                                  _attendees ??= [];
                                   setState(() {
-                                    _attendees?.add(result);
+                                    _attendees.add(result);
                                   });
                                 }
                               }
@@ -403,14 +413,14 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                       ListView.builder(
                         physics: const NeverScrollableScrollPhysics(),
                         shrinkWrap: true,
-                        itemCount: (_attendees ?? []).length,
+                        itemCount: _attendees.length,
                         itemBuilder: (context, index) {
                           return Container(
-                            color: (_attendees?[index].isOrganiser ?? false)
+                            color: (_attendees[index].isOrganiser)
                                 ? MediaQuery.of(context).platformBrightness ==
-                                Brightness.dark
-                                ? Colors.black26
-                                : Colors.greenAccent[100]
+                                        Brightness.dark
+                                    ? Colors.black26
+                                    : Colors.greenAccent[100]
                                 : Colors.transparent,
                             child: ListTile(
                               onTap: () async {
@@ -418,11 +428,11 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                     context,
                                     MaterialPageRoute(
                                         builder: (context) => EventAttendeePage(
-                                            attendee: _attendees?[index],
+                                            attendee: _attendees[index],
                                             eventId: _event?.eventId)));
                                 if (result != null) {
                                   return setState(() {
-                                    _attendees?[index] = result;
+                                    _attendees[index] = result;
                                   });
                                 }
                               },
@@ -430,7 +440,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 10.0),
                                 child: Text(
-                                    '${_attendees?[index].name} (${_attendees?[index].emailAddress})'),
+                                    '${_attendees[index].name} (${_attendees[index].emailAddress})'),
                               ),
                               subtitle: Wrap(
                                 spacing: 10,
@@ -438,7 +448,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                 alignment: WrapAlignment.end,
                                 children: <Widget>[
                                   Visibility(
-                                    visible: _attendees?[index]
+                                    visible: _attendees[index]
                                             .androidAttendeeDetails !=
                                         null,
                                     child: Container(
@@ -449,11 +459,11 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                             border: Border.all(
                                                 color: Colors.blueAccent)),
                                         child: Text(
-                                            'Android: ${_attendees?[index].androidAttendeeDetails?.attendanceStatus?.enumToString}')),
+                                            'Android: ${_attendees[index].androidAttendeeDetails?.attendanceStatus?.enumToString}')),
                                   ),
                                   Visibility(
                                     visible:
-                                        _attendees?[index].iosAttendeeDetails !=
+                                        _attendees[index].iosAttendeeDetails !=
                                             null,
                                     child: Container(
                                         margin: const EdgeInsets.symmetric(
@@ -463,12 +473,10 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                             border: Border.all(
                                                 color: Colors.blueAccent)),
                                         child: Text(
-                                            'iOS: ${_attendees?[index].iosAttendeeDetails?.attendanceStatus?.enumToString}')),
+                                            'iOS: ${_attendees[index].iosAttendeeDetails?.attendanceStatus?.enumToString}')),
                                   ),
                                   Visibility(
-                                      visible:
-                                          _attendees?[index].isCurrentUser ??
-                                              false,
+                                      visible: _attendees[index].isCurrentUser,
                                       child: Container(
                                           margin: const EdgeInsets.symmetric(
                                               vertical: 10.0),
@@ -478,8 +486,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                                   color: Colors.blueAccent)),
                                           child: const Text('current user'))),
                                   Visibility(
-                                      visible: _attendees?[index].isOrganiser ??
-                                          false,
+                                      visible: _attendees[index].isOrganiser,
                                       child: Container(
                                           margin: const EdgeInsets.symmetric(
                                               vertical: 10.0),
@@ -496,13 +503,13 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                         border: Border.all(
                                             color: Colors.blueAccent)),
                                     child: Text(
-                                        '${_attendees?[index].role?.enumToString}'),
+                                        '${_attendees[index].role?.enumToString}'),
                                   ),
                                   IconButton(
                                     padding: const EdgeInsets.all(0),
                                     onPressed: () {
                                       setState(() {
-                                        _attendees?.removeAt(index);
+                                        _attendees.removeAt(index);
                                       });
                                     },
                                     icon: const Icon(
@@ -522,7 +529,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                               context,
                               MaterialPageRoute(
                                   builder: (context) =>
-                                      EventRemindersPage(_reminders ?? [])));
+                                      EventRemindersPage(_reminders)));
                           if (result == null) {
                             return;
                           }
@@ -537,11 +544,11 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                               spacing: 10.0,
                               children: [
                                 const Icon(Icons.alarm),
-                                if (_reminders?.isEmpty ?? false)
+                                if (_reminders.isEmpty)
                                   Text(_calendar.isReadOnly == false
                                       ? 'Add reminders'
                                       : 'Reminders'),
-                                for (var reminder in _reminders ?? [])
+                                for (var reminder in _reminders)
                                   Text('${reminder.minutes} minutes before; ')
                               ],
                             ),
@@ -549,42 +556,26 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                         ),
                       ),
                       CheckboxListTile(
-                        value: _rrule != null,
+                        value: _isRecurringEvent,
                         title: const Text('Is recurring'),
                         onChanged: (isChecked) {
-                          if (isChecked != null) {
-                            setState(() {
-                              if (isChecked) {
-                                _rrule =
-                                    RecurrenceRule(frequency: Frequency.daily);
-                              } else {
-                                _rrule = null;
-                              }
-                            });
-                          }
+                          setState(() {
+                            _isRecurringEvent = isChecked ?? false;
+                          });
                         },
                       ),
-                      if (_rrule != null) ...[
+                      if (_isRecurringEvent) ...[
                         ListTile(
                           leading: const Text('Select a Recurrence Type'),
-                          trailing: DropdownButton<Frequency>(
+                          trailing: DropdownButton<RecurrenceFrequency>(
                             onChanged: (selectedFrequency) {
                               setState(() {
-                                _onFrequencyChange(
-                                    selectedFrequency ?? Frequency.daily);
-                                _getValidDaysOfMonth(selectedFrequency);
+                                _recurrenceFrequency = selectedFrequency;
+                                _getValidDaysOfMonth(_recurrenceFrequency);
                               });
                             },
-                            value: _rrule?.frequency,
-                            items: [
-                              // Frequency.secondly,
-                              // Frequency.minutely,
-                              // Frequency.hourly,
-                              Frequency.daily,
-                              Frequency.weekly,
-                              Frequency.monthly,
-                              Frequency.yearly,
-                            ]
+                            value: _recurrenceFrequency,
+                            items: RecurrenceFrequency.values
                                 .map((frequency) => DropdownMenuItem(
                                       value: frequency,
                                       child:
@@ -600,7 +591,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                               const Text('Repeat Every '),
                               Flexible(
                                 child: TextFormField(
-                                  initialValue: '${_rrule?.interval ?? 1}',
+                                  initialValue: _interval?.toString() ?? '1',
                                   decoration:
                                       const InputDecoration(hintText: '1'),
                                   keyboardType: TextInputType.number,
@@ -612,33 +603,30 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                   textAlign: TextAlign.right,
                                   onSaved: (String? value) {
                                     if (value != null) {
-                                      _rrule = _rrule?.copyWith(
-                                          interval: int.tryParse(value));
+                                      _interval = int.tryParse(value);
                                     }
                                   },
                                 ),
                               ),
                               _recurrenceFrequencyToIntervalText(
-                                  _rrule?.frequency),
+                                  _recurrenceFrequency),
                             ],
                           ),
                         ),
-                        if (_rrule?.frequency == Frequency.weekly) ...[
+                        if (_recurrenceFrequency ==
+                            RecurrenceFrequency.Weekly) ...[
                           Column(
                             children: [
                               ...DayOfWeek.values.map((day) {
                                 return CheckboxListTile(
                                   title: Text(day.enumToString),
-                                  value: _rrule?.byWeekDays
-                                      .contains(ByWeekDayEntry(day.index + 1)),
+                                  value: _daysOfWeek.any((dow) => dow == day),
                                   onChanged: (selected) {
                                     setState(() {
                                       if (selected == true) {
-                                        _rrule?.byWeekDays
-                                            .add(ByWeekDayEntry(day.index + 1));
+                                        _daysOfWeek.add(day);
                                       } else {
-                                        _rrule?.byWeekDays.remove(
-                                            ByWeekDayEntry(day.index + 1));
+                                        _daysOfWeek.remove(day);
                                       }
                                       _updateDaysOfWeekGroup(selectedDay: day);
                                     });
@@ -651,13 +639,12 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                     title: Text(group.enumToString),
                                     value: group,
                                     groupValue: _dayOfWeekGroup,
-                                    onChanged: (DayOfWeekGroup? selected) {
-                                      if (selected != null) {
-                                        setState(() {
-                                          _dayOfWeekGroup = selected;
-                                          _updateDaysOfWeek();
-                                        });
-                                      }
+                                    onChanged: (selected) {
+                                      setState(() {
+                                        _dayOfWeekGroup =
+                                            selected as DayOfWeekGroup;
+                                        _updateDaysOfWeek();
+                                      });
                                     },
                                     controlAffinity:
                                         ListTileControlAffinity.trailing);
@@ -665,43 +652,30 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             ],
                           )
                         ],
-                        if (_rrule?.frequency == Frequency.monthly ||
-                            _rrule?.frequency == Frequency.yearly) ...[
+                        if (_recurrenceFrequency ==
+                                RecurrenceFrequency.Monthly ||
+                            _recurrenceFrequency ==
+                                RecurrenceFrequency.Yearly) ...[
                           SwitchListTile(
-                            value: _rrule?.hasByMonthDays ?? false,
-                            onChanged: (value) {
-                              setState(() {
-                                if (value) {
-                                  _rrule = _rrule?.copyWith(
-                                      byMonthDays: {1}, byWeekDays: {});
-                                } else {
-                                  _rrule = _rrule?.copyWith(
-                                      byMonthDays: {},
-                                      byWeekDays: {ByWeekDayEntry(1, 1)});
-                                }
-                              });
-                            },
+                            value: _isByDayOfMonth,
+                            onChanged: (value) =>
+                                setState(() => _isByDayOfMonth = value),
                             title: const Text('By day of the month'),
                           )
                         ],
-                        if (_rrule?.frequency == Frequency.yearly &&
-                            (_rrule?.hasByMonthDays ?? false)) ...[
+                        if (_recurrenceFrequency ==
+                                RecurrenceFrequency.Yearly &&
+                            _isByDayOfMonth) ...[
                           ListTile(
                             leading: const Text('Month of the year'),
                             trailing: DropdownButton<MonthOfYear>(
                               onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _rrule = _rrule
-                                        ?.copyWith(byMonths: {value.index + 1});
-                                    _getValidDaysOfMonth(_rrule?.frequency);
-                                  });
-                                }
+                                setState(() {
+                                  _monthOfYear = value;
+                                  _getValidDaysOfMonth(_recurrenceFrequency);
+                                });
                               },
-                              value: MonthOfYear.values.toList()[
-                                  (_rrule?.hasByMonths ?? false)
-                                      ? _rrule!.byMonths.first - 1
-                                      : 0],
+                              value: _monthOfYear,
                               items: MonthOfYear.values
                                   .map((month) => DropdownMenuItem(
                                         value: month,
@@ -711,23 +685,20 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             ),
                           ),
                         ],
-                        if ((_rrule?.hasByMonthDays ?? false) &&
-                            (_rrule?.frequency == Frequency.monthly ||
-                                _rrule?.frequency == Frequency.yearly)) ...[
+                        if (_isByDayOfMonth &&
+                            (_recurrenceFrequency ==
+                                    RecurrenceFrequency.Monthly ||
+                                _recurrenceFrequency ==
+                                    RecurrenceFrequency.Yearly)) ...[
                           ListTile(
                             leading: const Text('Day of the month'),
                             trailing: DropdownButton<int>(
                               onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _rrule =
-                                        _rrule?.copyWith(byMonthDays: {value});
-                                  });
-                                }
+                                setState(() {
+                                  _dayOfMonth = value;
+                                });
                               },
-                              value: (_rrule?.hasByMonthDays ?? false)
-                                  ? _rrule!.byMonthDays.first
-                                  : 1,
+                              value: _dayOfMonth,
                               items: _validDaysOfMonth
                                   .map((day) => DropdownMenuItem(
                                         value: day,
@@ -737,19 +708,23 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             ),
                           ),
                         ],
-                        if (!(_rrule?.hasByMonthDays ?? false) &&
-                            (_rrule?.frequency == Frequency.monthly ||
-                                _rrule?.frequency == Frequency.yearly)) ...[
+                        if (!_isByDayOfMonth &&
+                            (_recurrenceFrequency ==
+                                    RecurrenceFrequency.Monthly ||
+                                _recurrenceFrequency ==
+                                    RecurrenceFrequency.Yearly)) ...[
                           Padding(
                             padding: const EdgeInsets.fromLTRB(15, 10, 15, 10),
                             child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: _recurrenceFrequencyToText(
-                                                _rrule?.frequency)
+                                                _recurrenceFrequency)
                                             .data !=
                                         null
-                                    ? Text(
-                                        '${_recurrenceFrequencyToText(_rrule?.frequency).data!} on the ')
+                                    ? Text(_recurrenceFrequencyToText(
+                                                _recurrenceFrequency)
+                                            .data! +
+                                        ' on the ')
                                     : const Text('')),
                           ),
                           Padding(
@@ -760,23 +735,11 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                 Flexible(
                                   child: DropdownButton<WeekNumber>(
                                     onChanged: (value) {
-                                      if (value != null) {
-                                        final weekDay =
-                                            _rrule?.byWeekDays.first.day ?? 1;
-                                        setState(() {
-                                          _rrule = _rrule?.copyWith(
-                                              byWeekDays: {
-                                                ByWeekDayEntry(
-                                                    weekDay, value.index + 1)
-                                              });
-                                        });
-                                      }
+                                      setState(() {
+                                        _weekOfMonth = value;
+                                      });
                                     },
-                                    value: WeekNumber.values.toList()[
-                                        (_rrule?.hasByWeekDays ?? false)
-                                            ? _weekNumFromWeekDayOccurence(
-                                                _rrule!.byWeekDays)
-                                            : 0],
+                                    value: _weekOfMonth ?? WeekNumber.First,
                                     items: WeekNumber.values
                                         .map((weekNum) => DropdownMenuItem(
                                               value: weekNum,
@@ -788,25 +751,13 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                 Flexible(
                                   child: DropdownButton<DayOfWeek>(
                                     onChanged: (value) {
-                                      if (value != null) {
-                                        final weekNo = _rrule
-                                                ?.byWeekDays.first.occurrence ??
-                                            1;
-                                        setState(() {
-                                          _rrule = _rrule?.copyWith(
-                                              byWeekDays: {
-                                                ByWeekDayEntry(
-                                                    value.index + 1, weekNo)
-                                              });
-                                        });
-                                      }
+                                      setState(() {
+                                        _selectedDayOfWeek = value;
+                                      });
                                     },
-                                    value: (_rrule?.hasByWeekDays ?? false) &&
-                                            _rrule?.byWeekDays.first
-                                                    .occurrence !=
-                                                null
-                                        ? DayOfWeek.values[
-                                            _rrule!.byWeekDays.first.day - 1]
+                                    value: _selectedDayOfWeek != null
+                                        ? DayOfWeek
+                                            .values[_selectedDayOfWeek!.index]
                                         : DayOfWeek.values[0],
                                     items: DayOfWeek.values
                                         .map((day) => DropdownMenuItem(
@@ -816,22 +767,17 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                         .toList(),
                                   ),
                                 ),
-                                if (_rrule?.frequency == Frequency.yearly) ...[
+                                if (_recurrenceFrequency ==
+                                    RecurrenceFrequency.Yearly) ...[
                                   const Text('of'),
                                   Flexible(
                                     child: DropdownButton<MonthOfYear>(
                                       onChanged: (value) {
-                                        if (value != null) {
-                                          setState(() {
-                                            _rrule = _rrule?.copyWith(
-                                                byMonths: {value.index + 1});
-                                          });
-                                        }
+                                        setState(() {
+                                          _monthOfYear = value;
+                                        });
                                       },
-                                      value: MonthOfYear.values.toList()[
-                                          (_rrule?.hasByMonths ?? false)
-                                              ? _rrule!.byMonths.first - 1
-                                              : 0],
+                                      value: _monthOfYear,
                                       items: MonthOfYear.values
                                           .map((month) => DropdownMenuItem(
                                                 value: month,
@@ -850,9 +796,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                           trailing: DropdownButton<RecurrenceRuleEndType>(
                             onChanged: (value) {
                               setState(() {
-                                if (value != null) {
-                                  _recurrenceRuleEndType = value;
-                                }
+                                _recurrenceRuleEndType = value;
                               });
                             },
                             value: _recurrenceRuleEndType,
@@ -874,7 +818,8 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                 const Text('For the next '),
                                 Flexible(
                                   child: TextFormField(
-                                    initialValue: '${_rrule?.count ?? 1}',
+                                    initialValue:
+                                        _totalOccurrences?.toString() ?? '1',
                                     decoration:
                                         const InputDecoration(hintText: '1'),
                                     keyboardType: TextInputType.number,
@@ -886,8 +831,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                                     textAlign: TextAlign.right,
                                     onSaved: (String? value) {
                                       if (value != null) {
-                                        _rrule = _rrule?.copyWith(
-                                            count: int.tryParse(value));
+                                        _totalOccurrences = int.tryParse(value);
                                       }
                                     },
                                   ),
@@ -903,27 +847,15 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             child: DateTimePicker(
                               labelText: 'Date',
                               enableTime: false,
-                              selectedDate: _rrule?.until ?? DateTime.now(),
+                              selectedDate: _recurrenceEndDate,
                               selectDate: (DateTime date) {
                                 setState(() {
-                                  _rrule = _rrule?.copyWith(
-                                      until: DateTime(
-                                              date.year,
-                                              date.month,
-                                              date.day,
-                                              _endTime?.hour ?? nowDate.hour,
-                                              _endTime?.minute ??
-                                                  nowDate.minute)
-                                          .toUtc());
+                                  _recurrenceEndDate = date;
                                 });
                               },
                             ),
                           ),
                       ],
-                      ...[
-                        // TODO: on iPhone (e.g. 8) this seems neccesary to be able to access UI below the FAB
-                        const SizedBox(height: 75),
-                      ]
                     ],
                   ),
                 ),
@@ -932,11 +864,12 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                   ElevatedButton(
                     key: const Key('deleteEventButton'),
                     style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: Colors.red),
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.red,
+                    ),
                     onPressed: () async {
                       bool? result = true;
-                      if (!(_rrule != null)) {
+                      if (!_isRecurringEvent) {
                         await _deviceCalendarPlugin.deleteEvent(
                             _calendar.id, _event?.eventId);
                       } else {
@@ -946,7 +879,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                             builder: (BuildContext context) {
                               return _recurringEventDialog != null
                                   ? _recurringEventDialog as Widget
-                                  : const SizedBox.shrink();
+                                  : const SizedBox();
                             });
                       }
 
@@ -956,7 +889,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
                     },
                     child: const Text('Delete'),
                   ),
-                ],
+                ]
               ],
             ),
           ),
@@ -971,28 +904,50 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
             if (form?.validate() == false) {
               _autovalidate =
                   AutovalidateMode.always; // Start validating on every change.
-              showInSnackBar(
-                  context, 'Please fix the errors in red before submitting.');
+              showInSnackBar('Please fix the errors in red before submitting.');
             } else {
               form?.save();
-              _adjustStartEnd();
-              _event?.recurrenceRule = _rrule;
-              // debugPrint('FINAL_RRULE: ${_rrule.toString()}');
-            }
-            _event?.attendees = _attendees;
-            _event?.reminders = _reminders;
-            _event?.availability = _availability;
-            _event?.status = _eventStatus;
-            var createEventResult =
-                await _deviceCalendarPlugin.createOrUpdateEvent(_event);
-            if (createEventResult?.isSuccess == true) {
-              Navigator.pop(context, true);
-            } else {
-              showInSnackBar(
-                  context,
-                  createEventResult?.errors
-                      .map((err) => '[${err.errorCode}] ${err.errorMessage}')
-                      .join(' | ') as String);
+              if (_isRecurringEvent) {
+                if (!_isByDayOfMonth &&
+                    (_recurrenceFrequency == RecurrenceFrequency.Monthly ||
+                        _recurrenceFrequency == RecurrenceFrequency.Yearly)) {
+                  // Setting day of the week parameters for WeekNumber to avoid clashing with the weekly recurrence values
+                  _daysOfWeek.clear();
+                  if (_selectedDayOfWeek != null) {
+                    _daysOfWeek.add(_selectedDayOfWeek as DayOfWeek);
+                  }
+                } else {
+                  _weekOfMonth = null;
+                }
+
+                _event?.recurrenceRule = RecurrenceRule(_recurrenceFrequency,
+                    interval: _interval,
+                    totalOccurrences: (_recurrenceRuleEndType ==
+                            RecurrenceRuleEndType.MaxOccurrences)
+                        ? _totalOccurrences
+                        : null,
+                    endDate: _recurrenceRuleEndType ==
+                            RecurrenceRuleEndType.SpecifiedEndDate
+                        ? _recurrenceEndDate
+                        : null,
+                    daysOfWeek: _daysOfWeek,
+                    dayOfMonth: _dayOfMonth,
+                    monthOfYear: _monthOfYear,
+                    weekOfMonth: _weekOfMonth);
+              }
+              _event?.attendees = _attendees;
+              _event?.reminders = _reminders;
+              _event?.availability = _availability;
+              _event?.status = _eventStatus;
+              var createEventResult =
+                  await _deviceCalendarPlugin.createOrUpdateEvent(_event);
+              if (createEventResult?.isSuccess == true) {
+                Navigator.pop(context, true);
+              } else {
+                showInSnackBar(createEventResult?.errors
+                    .map((err) => '[${err.errorCode}] ${err.errorMessage}')
+                    .join(' | ') as String);
+              }
             }
           },
           child: const Icon(Icons.check),
@@ -1001,31 +956,34 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
     );
   }
 
-  Text _recurrenceFrequencyToText(Frequency? recurrenceFrequency) {
-    if (recurrenceFrequency == Frequency.daily) {
-      return const Text('Daily');
-    } else if (recurrenceFrequency == Frequency.weekly) {
-      return const Text('Weekly');
-    } else if (recurrenceFrequency == Frequency.monthly) {
-      return const Text('Monthly');
-    } else if (recurrenceFrequency == Frequency.yearly) {
-      return const Text('Yearly');
-    } else {
-      return const Text('');
+  Text _recurrenceFrequencyToText(RecurrenceFrequency? recurrenceFrequency) {
+    switch (recurrenceFrequency) {
+      case RecurrenceFrequency.Daily:
+        return const Text('Daily');
+      case RecurrenceFrequency.Weekly:
+        return const Text('Weekly');
+      case RecurrenceFrequency.Monthly:
+        return const Text('Monthly');
+      case RecurrenceFrequency.Yearly:
+        return const Text('Yearly');
+      default:
+        return const Text('');
     }
   }
 
-  Text _recurrenceFrequencyToIntervalText(Frequency? recurrenceFrequency) {
-    if (recurrenceFrequency == Frequency.daily) {
-      return const Text(' Day(s)');
-    } else if (recurrenceFrequency == Frequency.weekly) {
-      return const Text(' Week(s) on');
-    } else if (recurrenceFrequency == Frequency.monthly) {
-      return const Text(' Month(s)');
-    } else if (recurrenceFrequency == Frequency.yearly) {
-      return const Text(' Year(s)');
-    } else {
-      return const Text('');
+  Text _recurrenceFrequencyToIntervalText(
+      RecurrenceFrequency? recurrenceFrequency) {
+    switch (recurrenceFrequency) {
+      case RecurrenceFrequency.Daily:
+        return const Text(' Day(s)');
+      case RecurrenceFrequency.Weekly:
+        return const Text(' Week(s) on');
+      case RecurrenceFrequency.Monthly:
+        return const Text(' Month(s)');
+      case RecurrenceFrequency.Yearly:
+        return const Text(' Year(s)');
+      default:
+        return const Text('');
     }
   }
 
@@ -1043,14 +1001,14 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
   }
 
   // Get total days of a month
-  void _getValidDaysOfMonth(Frequency? frequency) {
+  void _getValidDaysOfMonth(RecurrenceFrequency? frequency) {
     _validDaysOfMonth.clear();
     var totalDays = 0;
 
     // Year frequency: Get total days of the selected month
-    if (frequency == Frequency.yearly) {
+    if (frequency == RecurrenceFrequency.Yearly) {
       totalDays = DateTime(DateTime.now().year,
-              (_rrule?.hasByMonths ?? false) ? _rrule!.byMonths.first : 1, 0)
+              _monthOfYear?.value != null ? _monthOfYear!.value + 1 : 1, 0)
           .day;
     } else {
       // Otherwise, get total days of the current month
@@ -1064,153 +1022,49 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
   }
 
   void _updateDaysOfWeek() {
+    if (_dayOfWeekGroup == null) return;
+    var days = _dayOfWeekGroup!.getDays;
+
     switch (_dayOfWeekGroup) {
       case DayOfWeekGroup.Weekday:
-        _rrule = _rrule?.copyWith(byWeekDays: {
-          ByWeekDayEntry(1),
-          ByWeekDayEntry(2),
-          ByWeekDayEntry(3),
-          ByWeekDayEntry(4),
-          ByWeekDayEntry(5),
-        });
-        break;
       case DayOfWeekGroup.Weekend:
-        _rrule = _rrule?.copyWith(byWeekDays: {
-          ByWeekDayEntry(6),
-          ByWeekDayEntry(7),
-        });
-        break;
       case DayOfWeekGroup.AllDays:
-        _rrule = _rrule?.copyWith(byWeekDays: {
-          ByWeekDayEntry(1),
-          ByWeekDayEntry(2),
-          ByWeekDayEntry(3),
-          ByWeekDayEntry(4),
-          ByWeekDayEntry(5),
-          ByWeekDayEntry(6),
-          ByWeekDayEntry(7),
-        });
+        _daysOfWeek.clear();
+        _daysOfWeek.addAll(days.where((a) => _daysOfWeek.every((b) => a != b)));
         break;
       case DayOfWeekGroup.None:
-      default:
-        _rrule?.byWeekDays.clear();
+        _daysOfWeek.clear();
         break;
+      default:
+        _daysOfWeek.clear();
     }
-    // () => setState(() => {});
   }
 
   void _updateDaysOfWeekGroup({DayOfWeek? selectedDay}) {
-    final byWeekDays = _rrule?.byWeekDays;
-    if (byWeekDays != null) {
-      if (byWeekDays.length == 7 &&
-          byWeekDays.every((p0) =>
-              p0.day == 1 ||
-              p0.day == 2 ||
-              p0.day == 3 ||
-              p0.day == 4 ||
-              p0.day == 5 ||
-              p0.day == 6 ||
-              p0.day == 7)) {
-        _dayOfWeekGroup = DayOfWeekGroup.AllDays;
-      } else if (byWeekDays.length == 5 &&
-          byWeekDays.every((p0) =>
-              p0.day == 1 ||
-              p0.day == 2 ||
-              p0.day == 3 ||
-              p0.day == 4 ||
-              p0.day == 5) &&
-          byWeekDays.none((p0) => p0.day == 6 || p0.day == 7)) {
-        _dayOfWeekGroup = DayOfWeekGroup.Weekday;
-      } else if (byWeekDays.length == 2 &&
-          byWeekDays.every((p0) => p0.day == 6 || p0.day == 7) &&
-          byWeekDays.none((p0) =>
-              p0.day == 1 ||
-              p0.day == 2 ||
-              p0.day == 3 ||
-              p0.day == 4 ||
-              p0.day == 5)) {
-        _dayOfWeekGroup = DayOfWeekGroup.Weekend;
-      } else {
-        _dayOfWeekGroup = DayOfWeekGroup.None;
-      }
-    }
-  }
+    var deepEquality = const DeepCollectionEquality.unordered().equals;
 
-  int _weekNumFromWeekDayOccurence(Set<ByWeekDayEntry> weekdays) {
-    final weekNum = weekdays.first.occurrence;
-    if (weekNum != null) {
-      return weekNum - 1;
-    } else {
-      return 0;
+    // If _daysOfWeek contains nothing
+    if (_daysOfWeek.isEmpty && _dayOfWeekGroup != DayOfWeekGroup.None) {
+      _dayOfWeekGroup = DayOfWeekGroup.None;
     }
-  }
-
-  void _onFrequencyChange(Frequency freq) {
-    final rrule = _rrule;
-    if (rrule != null) {
-      final hasByWeekDays = rrule.hasByWeekDays;
-      final hasByMonthDays = rrule.hasByMonthDays;
-      final hasByMonths = rrule.hasByMonths;
-      if (freq == Frequency.daily || freq == Frequency.weekly) {
-        if (hasByWeekDays) {
-          rrule.byWeekDays.clear();
-        }
-        if (hasByMonths) {
-          rrule.byMonths.clear();
-        }
-        _rrule = rrule.copyWith(frequency: freq);
-      }
-      if (freq == Frequency.monthly) {
-        if (hasByMonths) {
-          rrule.byMonths.clear();
-        }
-        if (!hasByWeekDays && !hasByMonthDays) {
-          _rrule = rrule
-              .copyWith(frequency: freq, byWeekDays: {ByWeekDayEntry(1, 1)});
-        } else {
-          _rrule = rrule.copyWith(frequency: freq);
-        }
-      }
-      if (freq == Frequency.yearly) {
-        if (!hasByWeekDays || !hasByMonths) {
-          _rrule = rrule.copyWith(
-              frequency: freq,
-              byWeekDays: {ByWeekDayEntry(1, 1)},
-              byMonths: {1});
-        } else {
-          _rrule = rrule.copyWith(frequency: freq);
-        }
-      }
+    // If _daysOfWeek contains Monday to Friday
+    else if (deepEquality(_daysOfWeek, DayOfWeekGroup.Weekday.getDays) &&
+        _dayOfWeekGroup != DayOfWeekGroup.Weekday) {
+      _dayOfWeekGroup = DayOfWeekGroup.Weekday;
     }
-  }
-
-  /// In order to avoid an event instance to appear outside of the recurrence
-  /// rrule, the start and end date have to be adjusted to match the first
-  /// instance.
-  void _adjustStartEnd() {
-    final start = _event?.start;
-    final end = _event?.end;
-    final rrule = _rrule;
-    if (start != null && end != null && rrule != null) {
-      final allDay = _event?.allDay ?? false;
-      final duration = end.difference(start);
-      final instances = rrule.getAllInstances(
-          start: allDay
-              ? DateTime.utc(start.year, start.month, start.day)
-              : DateTime(start.year, start.month, start.day, start.hour,
-                      start.minute)
-                  .toUtc(),
-          before: rrule.count == null && rrule.until == null
-              ? DateTime(start.year + 2, start.month, start.day, start.hour,
-                      start.minute)
-                  .toUtc()
-              : null);
-      if (instances.isNotEmpty) {
-        var newStart = TZDateTime.from(instances.first, start.location);
-        var newEnd = newStart.add(duration);
-        _event?.start = newStart;
-        _event?.end = newEnd;
-      }
+    // If _daysOfWeek contains Saturday and Sunday
+    else if (deepEquality(_daysOfWeek, DayOfWeekGroup.Weekend.getDays) &&
+        _dayOfWeekGroup != DayOfWeekGroup.Weekend) {
+      _dayOfWeekGroup = DayOfWeekGroup.Weekend;
+    }
+    // If _daysOfWeek contains all days
+    else if (deepEquality(_daysOfWeek, DayOfWeekGroup.AllDays.getDays) &&
+        _dayOfWeekGroup != DayOfWeekGroup.AllDays) {
+      _dayOfWeekGroup = DayOfWeekGroup.AllDays;
+    }
+    // Otherwise null
+    else {
+      _dayOfWeekGroup = null;
     }
   }
 
@@ -1235,6 +1089,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
     if (value.isEmpty) {
       return 'Name is required.';
     }
+
     return null;
   }
 
@@ -1253,7 +1108,7 @@ class _CalendarEventPageState extends State<CalendarEventPage> {
         .add(Duration(hours: time.hour, minutes: time.minute));
   }
 
-  void showInSnackBar(BuildContext context, String value) {
+  void showInSnackBar(String value) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
   }
 }
