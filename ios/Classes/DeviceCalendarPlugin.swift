@@ -1112,10 +1112,13 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        print("Current authorization status: \(status.rawValue)")
         if #available(iOS 17, *) {
+            print("Current authorization status iOS 17: \(EKAuthorizationStatus.fullAccess)")
+            print("Current authorization status iOS 17 rawValue: \(EKAuthorizationStatus.fullAccess.rawValue)")
             return status == EKAuthorizationStatus.fullAccess
         } else {
+            print("Current authorization status: \(EKAuthorizationStatus.authorized)")
+            print("Current authorization status rawValue: \(EKAuthorizationStatus.authorized.rawValue)")
             return status == EKAuthorizationStatus.authorized
         }
     }
