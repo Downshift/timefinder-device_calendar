@@ -1059,11 +1059,15 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         } else {
             print("Requesting permissions...")
-            requestPermissions { accessGranted in
+            requestPermissions { [weak self] accessGranted in
+                guard let self = self else { return }
                 DispatchQueue.main.async {
                     if accessGranted {
                         print("Permissions granted")
-                        permissionsGrantedAction()
+                        // Adding a delay to ensure the system updates the permission status
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            permissionsGrantedAction()
+                        }
                     } else {
                         print("Permissions denied")
                         self.finishWithUnauthorizedError(result: result)
