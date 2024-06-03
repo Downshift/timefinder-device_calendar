@@ -1059,28 +1059,50 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func checkPermissionsThenExecute(permissionsGrantedAction: () -> Void, result: @escaping FlutterResult) {
+    private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
         if hasEventPermissions() {
-            permissionsGrantedAction()
-            return
+            print("Permissions already granted")
+            DispatchQueue.main.async {
+                permissionsGrantedAction()
+            }
+        } else {
+            print("Requesting permissions...")
+            requestPermissions { [weak self] accessGranted in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    if accessGranted {
+                        print("Permissions granted")
+                        // Adding a delay to ensure the system updates the permission status
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            permissionsGrantedAction()
+                        }
+                    } else {
+                        print("Permissions denied")
+                        self.finishWithUnauthorizedError(result: result)
+                    }
+                }
+            }
         }
-        self.finishWithUnauthorizedError(result: result)
     }
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
         if hasEventPermissions() {
+            print("Permissions already granted (requestPermissions)")
             completion(true)
             return
         }
-        eventStore.requestAccess(to: .event, completion: {
-            (accessGranted: Bool, _: Error?) in
-            completion(accessGranted)
-        })
+        print("Requesting access to event store")
+        eventStore.requestAccess(to: .event) { (accessGranted: Bool, _: Error?) in
+            DispatchQueue.main.async {
+                print("Access granted: \(accessGranted)")
+                completion(accessGranted)
+            }
+        }
     }
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        print("EKEventStore status from Classes: \(status)")
+        print("Current authorization status: \(status.rawValue)")
         if #available(iOS 17, *) {
             return status == EKAuthorizationStatus.fullAccess
         } else {
