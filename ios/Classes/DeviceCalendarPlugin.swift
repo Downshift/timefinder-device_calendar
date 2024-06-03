@@ -1092,7 +1092,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             return
         }
         print("Requesting access to event store")
-        eventStore.requestAccess(to: .event) { (accessGranted: Bool, _: Error?) in
+        eventStore.requestAccess(to: .event) { [weak self] (accessGranted: Bool, _: Error?) in
+            guard let self = self else { return }
             DispatchQueue.main.async {
                 print("Access granted: \(accessGranted)")
                 completion(accessGranted)
