@@ -1053,15 +1053,19 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
         if hasEventPermissions() {
+            print("Permissions already granted")
             DispatchQueue.main.async {
                 permissionsGrantedAction()
             }
         } else {
+            print("Requesting permissions...")
             requestPermissions { accessGranted in
                 DispatchQueue.main.async {
                     if accessGranted {
+                        print("Permissions granted")
                         permissionsGrantedAction()
                     } else {
+                        print("Permissions denied")
                         self.finishWithUnauthorizedError(result: result)
                     }
                 }
@@ -1071,11 +1075,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
         if hasEventPermissions() {
+            print("Permissions already granted (requestPermissions)")
             completion(true)
             return
         }
+        print("Requesting access to event store")
         eventStore.requestAccess(to: .event) { (accessGranted: Bool, _: Error?) in
             DispatchQueue.main.async {
+                print("Access granted: \(accessGranted)")
                 completion(accessGranted)
             }
         }
