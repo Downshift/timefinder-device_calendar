@@ -1051,12 +1051,22 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func checkPermissionsThenExecute(permissionsGrantedAction: () -> Void, result: @escaping FlutterResult) {
+    private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
         if hasEventPermissions() {
-            permissionsGrantedAction()
-            return
+            DispatchQueue.main.async {
+                permissionsGrantedAction()
+            }
+        } else {
+            requestPermissions { accessGranted in
+                DispatchQueue.main.async {
+                    if accessGranted {
+                        permissionsGrantedAction()
+                    } else {
+                        self.finishWithUnauthorizedError(result: result)
+                    }
+                }
+            }
         }
-        self.finishWithUnauthorizedError(result: result)
     }
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
@@ -1064,15 +1074,20 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             completion(true)
             return
         }
-        eventStore.requestAccess(to: .event, completion: {
-            (accessGranted: Bool, _: Error?) in
-            completion(accessGranted)
-        })
+        eventStore.requestAccess(to: .event) { (accessGranted: Bool, _: Error?) in
+            DispatchQueue.main.async {
+                completion(accessGranted)
+            }
+        }
     }
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        return status == EKAuthorizationStatus.authorized
+        if #available(iOS 17, *) {
+            return status == EKAuthorizationStatus.fullAccess
+        } else {
+            return status == EKAuthorizationStatus.authorized
+        }
     }
 }
 
