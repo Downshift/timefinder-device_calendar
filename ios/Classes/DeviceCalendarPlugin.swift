@@ -303,9 +303,10 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
 
     private func deleteCalendar(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendarId = arguments[calendarIdArgument] as! String
+            let calendarId = arguments[self.calendarIdArgument] as! String
 
             let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId)
             if ekCalendar == nil {
@@ -327,6 +328,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         }, result: result)
     }
+
 
     private func getAccountType(_ sourceType: EKSourceType) -> String {
         switch (sourceType) {
