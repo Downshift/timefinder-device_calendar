@@ -270,29 +270,37 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
         private func retrieveCalendars(_ result: @escaping FlutterResult) {
             checkPermissionsThenExecute(permissionsGrantedAction: {
-                let ekCalendars = self.eventStore.calendars(for: .event)
-                let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
-                var calendars = [DeviceCalendar]()
-                for ekCalendar in ekCalendars {
-#if os(macOS)
-                    let calendarColor = ekCalendar.color.rgb()!
-#elseif os(iOS)
-                    let calendarColor = UIColor(cgColor: ekCalendar.cgColor).rgb()!
-#endif
-                    let calendar = DeviceCalendar(
-                        id: ekCalendar.calendarIdentifier,
-                        name: ekCalendar.title,
-                        isReadOnly: !ekCalendar.allowsContentModifications,
-                        isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
-                        color: calendarColor,
-                        accountName: ekCalendar.source.title,
-                        accountType: getAccountType(ekCalendar.source.sourceType))
-                    calendars.append(calendar)
-                }
+                DispatchQueue.main.async {
+                    print("Starting to retrieve calendars...")
+                    let ekCalendars = self.eventStore.calendars(for: .event)
+                    print("Calendars fetched from event store: \(ekCalendars.count)")
+                    let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
+                    print("Default calendar: \(String(describing: defaultCalendar?.calendarIdentifier))")
+                    var calendars = [DeviceCalendar]()
+                    for ekCalendar in ekCalendars {
+                    #if os(macOS)
+                        let calendarColor = ekCalendar.color.rgb()!
+                    #elseif os(iOS)
+                        let calendarColor = UIColor(cgColor: ekCalendar.cgColor).rgb()!
+                    #endif
+                        let calendar = DeviceCalendar(
+                            id: ekCalendar.calendarIdentifier,
+                            name: ekCalendar.title,
+                            isReadOnly: !ekCalendar.allowsContentModifications,
+                            isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
+                            color: calendarColor,
+                            accountName: ekCalendar.source.title,
+                            accountType: self.getAccountType(ekCalendar.source.sourceType))
+                        calendars.append(calendar)
+                        print("Added calendar: \(calendar.name)")
+                    }
 
-                self.encodeJsonAndFinish(codable: calendars, result: result)
+                    print("Total calendars processed: \(calendars.count)")
+                    self.encodeJsonAndFinish(codable: calendars, result: result)
+                }
             }, result: result)
         }
+
 
         private func deleteCalendar(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
             checkPermissionsThenExecute(permissionsGrantedAction: {
