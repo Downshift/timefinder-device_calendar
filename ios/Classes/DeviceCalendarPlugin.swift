@@ -1080,6 +1080,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
+        print("EKEventStore status from Classes: \(status)")
         if #available(iOS 17, *) {
             return status == EKAuthorizationStatus.fullAccess
         } else {

@@ -1072,6 +1072,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
+        print("EKEventStore from eventkit status: \(status.rawValue)")
         return status == EKAuthorizationStatus.authorized
     }
 }
