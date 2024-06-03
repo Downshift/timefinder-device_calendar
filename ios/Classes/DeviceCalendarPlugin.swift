@@ -814,16 +814,17 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func createOrUpdateEvent(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendarId = arguments[calendarIdArgument] as! String
-            let eventId = arguments[eventIdArgument] as? String
-            let isAllDay = arguments[eventAllDayArgument] as! Bool
-            let startDateMillisecondsSinceEpoch = arguments[eventStartDateArgument] as! NSNumber
-            let endDateDateMillisecondsSinceEpoch = arguments[eventEndDateArgument] as! NSNumber
-            let startDate = Date (timeIntervalSince1970: startDateMillisecondsSinceEpoch.doubleValue / 1000.0)
-            let endDate = Date (timeIntervalSince1970: endDateDateMillisecondsSinceEpoch.doubleValue / 1000.0)
-            let startTimeZoneString = arguments[eventStartTimeZoneArgument] as? String
+            let calendarId = arguments[self.calendarIdArgument] as! String
+            let eventId = arguments[self.eventIdArgument] as? String
+            let isAllDay = arguments[self.eventAllDayArgument] as! Bool
+            let startDateMillisecondsSinceEpoch = arguments[self.eventStartDateArgument] as! NSNumber
+            let endDateDateMillisecondsSinceEpoch = arguments[self.eventEndDateArgument] as! NSNumber
+            let startDate = Date(timeIntervalSince1970: startDateMillisecondsSinceEpoch.doubleValue / 1000.0)
+            let endDate = Date(timeIntervalSince1970: endDateDateMillisecondsSinceEpoch.doubleValue / 1000.0)
+            let startTimeZoneString = arguments[self.eventStartTimeZoneArgument] as? String
             let title = arguments[self.eventTitleArgument] as! String
             let description = arguments[self.eventDescriptionArgument] as? String
             let location = arguments[self.eventLocationArgument] as? String
@@ -855,12 +856,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             ekEvent!.isAllDay = isAllDay
             ekEvent!.startDate = startDate
             ekEvent!.endDate = endDate
-            
-            if (!isAllDay) { 
+
+            if (!isAllDay) {
                 let timeZone = TimeZone(identifier: startTimeZoneString ?? TimeZone.current.identifier) ?? .current
                 ekEvent!.timeZone = timeZone
             }
-            
+
             ekEvent!.calendar = ekCalendar!
             ekEvent!.location = location
 
@@ -873,11 +874,11 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 ekEvent!.url = nil
             }
 
-            ekEvent!.recurrenceRules = createEKRecurrenceRules(arguments)
-            setAttendees(arguments, ekEvent)
-            ekEvent!.alarms = createReminders(arguments)
+            ekEvent!.recurrenceRules = self.createEKRecurrenceRules(arguments)
+            self.setAttendees(arguments, ekEvent)
+            ekEvent!.alarms = self.createReminders(arguments)
 
-            if let availability = setAvailability(arguments) {
+            if let availability = self.setAvailability(arguments) {
                 ekEvent!.availability = availability
             }
 
@@ -890,6 +891,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         }, result: result)
     }
+
 
     private func createParticipant(name: String, emailAddress: String, role: Int) -> EKParticipant? {
         let ekAttendeeClass: AnyClass? = NSClassFromString("EKAttendee")
@@ -905,13 +907,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func deleteEvent(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendarId = arguments[calendarIdArgument] as! String
-            let eventId = arguments[eventIdArgument] as! String
-            let startDateNumber = arguments[eventStartDateArgument] as? NSNumber
-            let endDateNumber = arguments[eventEndDateArgument] as? NSNumber
-            let followingInstances = arguments[followingInstancesArgument] as? Bool
+            let calendarId = arguments[self.calendarIdArgument] as! String
+            let eventId = arguments[self.eventIdArgument] as! String
+            let startDateNumber = arguments[self.eventStartDateArgument] as? NSNumber
+            let endDateNumber = arguments[self.eventEndDateArgument] as? NSNumber
+            let followingInstances = arguments[self.followingInstancesArgument] as? Bool
 
             let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId)
             if ekCalendar == nil {
@@ -940,8 +943,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 }
             }
             else {
-                let startDate = Date (timeIntervalSince1970: startDateNumber!.doubleValue / 1000.0)
-                let endDate = Date (timeIntervalSince1970: endDateNumber!.doubleValue / 1000.0)
+                let startDate = Date(timeIntervalSince1970: startDateNumber!.doubleValue / 1000.0)
+                let endDate = Date(timeIntervalSince1970: endDateNumber!.doubleValue / 1000.0)
 
                 let predicate = self.eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
                 let foundEkEvents = self.eventStore.events(matching: predicate) as [EKEvent]?
@@ -951,7 +954,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     return
                 }
 
-                let ekEvent = foundEkEvents!.first(where: {$0.eventIdentifier == eventId})
+                let ekEvent = foundEkEvents!.first(where: { $0.eventIdentifier == eventId })
 
                 do {
                     if (!followingInstances!) {
@@ -969,6 +972,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         }, result: result)
     }
+
 
     private func showEventModal(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
 #if os(iOS)
