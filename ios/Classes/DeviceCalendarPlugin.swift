@@ -1105,12 +1105,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 do {
                     try await eventStore.requestFullAccessToEvents()
                     // Add a delay before checking the status
-                    await Task.sleep(1_000_000_000)  // Sleep for 1 second
-                    let status = EKEventStore.authorizationStatus(for: .event)
-                    let accessGranted = (status == .fullAccess)
-                    print("Access granted: \(accessGranted)")
-                    print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
+                    await Task.sleep(2_000_000_000)  // Sleep for 2 seconds
                     DispatchQueue.main.async {
+                        let status = EKEventStore.authorizationStatus(for: .event)
+                        let accessGranted = (status == .fullAccess)
+                        print("Access granted: \(accessGranted)")
+                        print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
                         completion(accessGranted)
                     }
                 } catch {
