@@ -1083,8 +1083,13 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     if accessGranted {
                         print("Permissions granted")
                         // Adding a delay to ensure the system updates the permission status
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            permissionsGrantedAction()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            if self.hasEventPermissions() {
+                                permissionsGrantedAction()
+                            } else {
+                                print("Permissions denied after delay")
+                                self.finishWithUnauthorizedError(result: result)
+                            }
                         }
                     } else {
                         print("Permissions denied")
