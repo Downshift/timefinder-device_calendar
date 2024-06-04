@@ -1077,36 +1077,26 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         } else {
             print("Requesting permissions...")
-            requestPermissions { [weak self] statusRawValue in
+            requestPermissions { [weak self] accessGranted in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
-                    if #available(iOS 17, *) {
-                        if statusRawValue == EKAuthorizationStatus.fullAccess.rawValue {
-                            print("Permissions granted")
-                            permissionsGrantedAction()
-                        } else {
-                            print("Permissions denied")
-                            self.finishWithUnauthorizedError(result: result)
-                        }
+                    if accessGranted {
+                        print("Permissions granted")
+                        permissionsGrantedAction()
                     } else {
-                        if statusRawValue == EKAuthorizationStatus.authorized.rawValue {
-                            print("Permissions granted")
-                            permissionsGrantedAction()
-                        } else {
-                            print("Permissions denied")
-                            self.finishWithUnauthorizedError(result: result)
-                        }
+                        print("Permissions denied")
+                        self.finishWithUnauthorizedError(result: result)
                     }
                 }
             }
         }
     }
 
-    private func requestPermissions(_ completion: @escaping (Int) -> Void) {
+    private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
         print("Current authorization status before: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
         if hasEventPermissions() {
             print("Permissions already granted (requestPermissions)")
-            completion(EKEventStore.authorizationStatus(for:.event).rawValue)
+            completion(true)
             return
         }
         print("Requesting full access to event store")
@@ -1115,15 +1105,16 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 do {
                     try await eventStore.requestFullAccessToEvents()
                     let status = EKEventStore.authorizationStatus(for: .event)
-                    print("Access granted: \(status == .fullAccess)")
-                    print("Current authorization status after request: \(status.rawValue)")
+                    let accessGranted = (status == .fullAccess)
+                    print("Access granted: \(accessGranted)")
+                    print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
                     DispatchQueue.main.async {
-                        completion(status.rawValue)
+                        completion(accessGranted)
                     }
                 } catch {
                     print("Error requesting full access: \(error.localizedDescription)")
                     DispatchQueue.main.async {
-                        completion(EKAuthorizationStatus.denied.rawValue)
+                        completion(false)
                     }
                 }
             }
@@ -1133,10 +1124,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     if let error = error {
                         print("Error requesting access: \(error.localizedDescription)")
                     }
-                    let status = EKEventStore.authorizationStatus(for: .event)
                     print("Access granted: \(accessGranted)")
-                    print("Current authorization status after request: \(status.rawValue)")
-                    completion(status.rawValue)
+                    print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
+                    completion(accessGranted)
                 }
             }
         }
