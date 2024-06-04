@@ -1101,19 +1101,21 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
         print("Requesting full access to event store")
         if #available(iOS 17, *) {
-            do {
-                try await eventStore.requestFullAccessToEvents()
-                let status = EKEventStore.authorizationStatus(for: .event)
-                let accessGranted = (status == .fullAccess)
-                print("Access granted: \(accessGranted)")
-                print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
-                DispatchQueue.main.async {
-                    completion(accessGranted)
-                }
-            } catch {
-                print("Error requesting full access: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    completion(false)
+            Task {
+                do {
+                    try await eventStore.requestFullAccessToEvents()
+                    let status = EKEventStore.authorizationStatus(for: .event)
+                    let accessGranted = (status == .fullAccess)
+                    print("Access granted: \(accessGranted)")
+                    print("Current authorization status after request: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
+                    DispatchQueue.main.async {
+                        completion(accessGranted)
+                    }
+                } catch {
+                    print("Error requesting full access: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        completion(false)
+                    }
                 }
             }
         } else {
