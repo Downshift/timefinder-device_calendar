@@ -1082,8 +1082,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 DispatchQueue.main.async {
                     if accessGranted {
                         print("Permissions granted")
-                        // Adding a delay to ensure the system updates the permission status
-                        self.checkPermissionsWithRetry(permissionsGrantedAction: permissionsGrantedAction, result: result)
+                        permissionsGrantedAction()
                     } else {
                         print("Permissions denied")
                         self.finishWithUnauthorizedError(result: result)
@@ -1091,28 +1090,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 }
             }
         }
-    }
-
-    private func checkPermissionsWithRetry(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
-        let maxRetries = 10
-        let delay: TimeInterval = 0.5
-
-        func retry(_ attempt: Int) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if self.hasEventPermissions() {
-                    print("Permissions granted after retry \(attempt)")
-                    permissionsGrantedAction()
-                } else if attempt < maxRetries {
-                    print("Retrying permission check: attempt \(attempt)")
-                    retry(attempt + 1)
-                } else {
-                    print("Permissions denied after max retries")
-                    self.finishWithUnauthorizedError(result: result)
-                }
-            }
-        }
-
-        retry(0)
     }
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
@@ -1123,8 +1100,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             return
         }
         print("Requesting access to event store")
-        eventStore.requestAccess(to: .event) { [weak self] (accessGranted: Bool, error: Error?) in
-            guard let self = self else { return }
+        eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
             DispatchQueue.main.async {
                 if let error = error {
                     print("Error requesting access: \(error.localizedDescription)")
