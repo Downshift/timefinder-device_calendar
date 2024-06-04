@@ -1077,11 +1077,11 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         } else {
             print("Requesting permissions...")
-            requestPermissions { [weak self] status in
+            requestPermissions { [weak self] statusRawValue in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     if #available(iOS 17, *) {
-                        if status == .fullAccess {
+                        if statusRawValue == EKAuthorizationStatus.fullAccess.rawValue {
                             print("Permissions granted")
                             permissionsGrantedAction()
                         } else {
@@ -1089,7 +1089,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                             self.finishWithUnauthorizedError(result: result)
                         }
                     } else {
-                        if status == .authorized {
+                        if statusRawValue == EKAuthorizationStatus.authorized.rawValue {
                             print("Permissions granted")
                             permissionsGrantedAction()
                         } else {
@@ -1102,11 +1102,11 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func requestPermissions(_ completion: @escaping (EKAuthorizationStatus) -> Void) {
+    private func requestPermissions(_ completion: @escaping (Int) -> Void) {
         print("Current authorization status before: \(EKEventStore.authorizationStatus(for:.event).rawValue)")
         if hasEventPermissions() {
             print("Permissions already granted (requestPermissions)")
-            completion(EKEventStore.authorizationStatus(for:.event))
+            completion(EKEventStore.authorizationStatus(for:.event).rawValue)
             return
         }
         print("Requesting full access to event store")
@@ -1118,12 +1118,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     print("Access granted: \(status == .fullAccess)")
                     print("Current authorization status after request: \(status.rawValue)")
                     DispatchQueue.main.async {
-                        completion(status)
+                        completion(status.rawValue)
                     }
                 } catch {
                     print("Error requesting full access: \(error.localizedDescription)")
                     DispatchQueue.main.async {
-                        completion(.denied)
+                        completion(EKAuthorizationStatus.denied.rawValue)
                     }
                 }
             }
@@ -1136,7 +1136,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     let status = EKEventStore.authorizationStatus(for: .event)
                     print("Access granted: \(accessGranted)")
                     print("Current authorization status after request: \(status.rawValue)")
-                    completion(status)
+                    completion(status.rawValue)
                 }
             }
         }
