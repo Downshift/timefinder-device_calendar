@@ -1126,12 +1126,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             return status == .authorized
         }
     }
-
-    private func finishWithUnauthorizedError(result: FlutterResult) {
-        print("Unauthorized error")
-        result(FlutterError(code: "401", message: "The user has not allowed this application to modify their calendar(s)", details: nil))
-    }
-
 }
 
 extension Date {
