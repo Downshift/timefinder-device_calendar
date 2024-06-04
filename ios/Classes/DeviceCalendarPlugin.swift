@@ -1092,56 +1092,35 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func requestPermissions(result: @escaping FlutterResult) {
-        let currentStatus = EKEventStore.authorizationStatus(for: .event)
-        logAuthorizationStatus(currentStatus, context: "before request")
-
-        eventStore.requestAccess(to: .event) { [weak self] (accessGranted: Bool, error: Error?) in
-            guard let self = self else { return }
-            if let error = error {
-                print("Error requesting access: \(error.localizedDescription)")
-                result(FlutterError(code: "ERROR", message: error.localizedDescription, details: nil))
-                return
-            }
-
-            print("Access granted: \(accessGranted)")
-
-            let newStatus = EKEventStore.authorizationStatus(for: .event)
-            self.logAuthorizationStatus(newStatus, context: "after request")
-
+    private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
+        print("Current authorization status before request: \(EKEventStore.authorizationStatus(for: .event).rawValue)")
+        if hasEventPermissions() {
+            print("Permissions already granted (requestPermissions)")
+            completion(true)
+            return
+        }
+        print("Requesting access to event store")
+        eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
             DispatchQueue.main.async {
-                result(accessGranted)
+                if let error = error {
+                    print("Error requesting access: \(error.localizedDescription)")
+                }
+                print("Access granted: \(accessGranted)")
+                print("Current authorization status after request: \(EKEventStore.authorizationStatus(for: .event).rawValue)")
+                completion(accessGranted)
             }
         }
     }
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        logAuthorizationStatus(status, context: "hasEventPermissions")
         if #available(iOS 17, *) {
-            return status == .authorized || status == .fullAccess
+            print("Current authorization status (iOS 17): \(status.rawValue) (Expected: \(EKAuthorizationStatus.fullAccess.rawValue))")
+            return status == .fullAccess
         } else {
+            print("Current authorization status: \(status.rawValue) (Expected: \(EKAuthorizationStatus.authorized.rawValue))")
             return status == .authorized
         }
-    }
-
-    private func logAuthorizationStatus(_ status: EKAuthorizationStatus, context: String) {
-        let statusString: String
-        switch status {
-        case .notDetermined:
-            statusString = "Not Determined"
-        case .restricted:
-            statusString = "Restricted"
-        case .denied:
-            statusString = "Denied"
-        case .authorized:
-            statusString = "Authorized"
-        case .fullAccess:
-            statusString = "Full Access"
-        @unknown default:
-            statusString = "Unknown"
-        }
-        print("Authorization status (\(context)): \(status.rawValue) - \(statusString)")
     }
 }
 
