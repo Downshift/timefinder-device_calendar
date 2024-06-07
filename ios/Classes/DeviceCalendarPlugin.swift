@@ -1072,16 +1072,20 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
         if hasEventPermissions() {
+            print("Permissions already granted") // Added logging
             DispatchQueue.main.async {
                 permissionsGrantedAction()
             }
         } else {
+            print("Requesting permissions...") // Added logging
             requestPermissions { [weak self] accessGranted in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     if accessGranted {
+                        print("Permissions granted after request") // Added logging
                         permissionsGrantedAction()
                     } else {
+                        print("Permissions not granted") // Added logging
                         self.finishWithUnauthorizedError(result: result)
                     }
                 }
@@ -1090,21 +1094,28 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        print("Current authorization status: \(status.rawValue)") // Added logging
+
         if hasEventPermissions() {
             completion(true)
             return
         }
+
         if #available(iOS 17, *) {
             Task {
                 do {
+                    print("Requesting full access to events...") // Added logging
                     try await eventStore.requestFullAccessToEvents()
                     DispatchQueue.main.async {
-                        let status = EKEventStore.authorizationStatus(for: .event)
-                        let accessGranted = (status == .fullAccess)
+                        let newStatus = EKEventStore.authorizationStatus(for: .event)
+                        print("Authorization status after requesting full access: \(newStatus.rawValue)") // Added logging
+                        let accessGranted = (newStatus == .fullAccess)
                         completion(accessGranted)
                     }
                 } catch {
                     DispatchQueue.main.async {
+                        print("Failed to request full access: \(error.localizedDescription)") // Added logging
                         completion(false)
                     }
                 }
@@ -1112,6 +1123,10 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         } else {
             eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
                 DispatchQueue.main.async {
+                    if let error = error {
+                        print("Error requesting access: \(error.localizedDescription)") // Added logging
+                    }
+                    print("Access granted: \(accessGranted)") // Added logging
                     completion(accessGranted)
                 }
             }
@@ -1120,6 +1135,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
+        print("Checking authorization status: \(status.rawValue)") // Added logging
+
         if #available(iOS 17, *) {
             return status == .fullAccess
         } else {
