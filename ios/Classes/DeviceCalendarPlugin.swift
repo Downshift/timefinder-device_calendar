@@ -276,13 +276,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 print("Calendars fetched from event store: \(ekCalendars.count)")
                 let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
                 print("Default calendar: \(String(describing: defaultCalendar?.calendarIdentifier))")
+                
                 var calendars = [DeviceCalendar]()
                 for ekCalendar in ekCalendars {
-                #if os(macOS)
+                    #if os(macOS)
                     let calendarColor = ekCalendar.color.rgb()!
-                #elseif os(iOS)
+                    #elseif os(iOS)
                     let calendarColor = UIColor(cgColor: ekCalendar.cgColor).rgb()!
-                #endif
+                    #endif
                     let calendar = DeviceCalendar(
                         id: ekCalendar.calendarIdentifier,
                         name: ekCalendar.title,
@@ -290,7 +291,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                         isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
                         color: calendarColor,
                         accountName: ekCalendar.source.title,
-                        accountType: self.getAccountType(ekCalendar.source.sourceType))
+                        accountType: self.getAccountType(ekCalendar.source.sourceType)
+                    )
                     calendars.append(calendar)
                     print("Added calendar: \(calendar.name)")
                 }
@@ -1108,7 +1110,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 }
             }
         } else {
-            eventStore.requestAccess(to:.event) { (accessGranted: Bool, error: Error?) in
+            eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
                 DispatchQueue.main.async {
                     completion(accessGranted)
                 }
